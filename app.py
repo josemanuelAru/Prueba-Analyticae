@@ -170,3 +170,4 @@ if uploaded_files:
             st.download_button("Descargar Solo Datos Filtrados (CSV)", data=csv_filtered, file_name="cliente_filtrado.csv", mime="text/csv")
 else:
     st.info("👆 Por favor, sube uno o más archivos CSV desde la barra lateral para empezar.")
+    
