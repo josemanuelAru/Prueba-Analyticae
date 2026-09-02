@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from functools import reduce
 
 # Configuración de la página
 st.set_page_config(
@@ -55,8 +54,10 @@ if uploaded_files:
             st.warning("Algunos archivos subidos no contienen la columna 'student_id'. Solo se procesarán los que sí la tienen.")
         
         if valid_dfs:
-            # Unir recursivamente por student_id (Outer join para conservar todos los datos)
-            merged_df = reduce(lambda left, right: pd.merge(left, right, on="student_id", how="outer", suffixes=('', '_dup')), valid_dfs)
+            # Unir secuencialmente por student_id asignando sufijos numéricos a columnas repetidas
+            merged_df = valid_dfs[0]
+            for i, df in enumerate(valid_dfs[1:], start=1):
+                merged_df = pd.merge(merged_df, df, on="student_id", how="outer", suffixes=('', f'_doc{i}'))
         else:
             st.error("Ninguno de los archivos contiene la columna 'student_id'.")
     else:
