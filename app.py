@@ -47,7 +47,6 @@ if uploaded_files:
 
     # Procesamiento de la unión
     if merge_method == "Combinar por columna 'student_id' (Merge/Join)":
-        # Verificar que todos los DataFrames tengan la columna student_id
         valid_dfs = [df for df in dfs if "student_id" in df.columns]
         
         if len(valid_dfs) < len(dfs):
@@ -70,55 +69,110 @@ if uploaded_files:
         st.write(f"Total de registros: **{len(merged_df):,}** | Total de columnas: **{len(merged_df.columns)}**")
         st.dataframe(merged_df.head(10), use_container_width=True)
 
-        # Sección de Filtrado por student_id
+        # --- SECCIÓN DE FILTROS ---
         st.markdown("---")
-        st.subheader("🔍 Filtrar por `student_id`")
+        st.subheader("🔍 Filtros Activos")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**👤 Filtro por `student_id`**")
+            if "student_id" in merged_df.columns:
+                unique_ids = merged_df["student_id"].dropna().astype(str).unique().tolist()
+                selected_id = st.selectbox(
+                    "Selecciona el ID:", 
+                    options=["-- Todos / Ninguno en específico --"] + unique_ids
+                )
+                text_search = st.text_input("O busca un ID por texto (coincidencia parcial):")
+            else:
+                selected_id = "-- Todos / Ninguno en específico --"
+                text_search = ""
+                st.warning("La columna 'student_id' no está presente.")
 
-        if "student_id" in merged_df.columns:
-            # Obtener lista única de IDs para auto-completar
-            unique_ids = merged_df["student_id"].dropna().astype(str).unique().tolist()
-            
-            # Selector interactivo o caja de texto
-            selected_id = st.selectbox(
-                "Selecciona o escribe el `student_id`:", 
-                options=["-- Todos / Ninguno en específico --"] + unique_ids
+        with col2:
+            st.markdown("**🎂 Filtro por Grupo/Edad**")
+            # Autodetectar columnas relacionadas con edad o grupos
+            possible_age_cols = [c for c in merged_df.columns if any(k in c.lower() for k in ["edad", "age", "grupo", "range", "bucket"])]
+            selected_age_col = st.selectbox(
+                "Selecciona la columna a filtrar:", 
+                options=["Ninguna"] + possible_age_cols + list(merged_df.columns)
             )
+            
+            selected_age_groups = []
+            if selected_age_col != "Ninguna":
+                unique_ages = merged_df[selected_age_col].dropna().unique().tolist()
+                selected_age_groups = st.multiselect("Selecciona el/los grupo(s):", options=unique_ages)
 
-            # También se permite buscar mediante texto libre
-            text_search = st.text_input("O busca un ID por texto (coincidencia parcial):")
+        # Aplicar filtros a la tabla unificada
+        filtered_df = merged_df.copy()
 
-            filtered_df = merged_df.copy()
-
+        if "student_id" in filtered_df.columns:
             if selected_id != "-- Todos / Ninguno en específico --":
                 filtered_df = filtered_df[filtered_df["student_id"].astype(str) == selected_id]
             elif text_search:
                 filtered_df = filtered_df[filtered_df["student_id"].astype(str).str.contains(text_search, case=False, na=False)]
+        
+        if selected_age_col != "Ninguna" and selected_age_groups:
+            filtered_df = filtered_df[filtered_df[selected_age_col].isin(selected_age_groups)]
 
-            st.write(f"Resultados encontrados: **{len(filtered_df)}**")
-            st.dataframe(filtered_df, use_container_width=True)
+        st.write(f"Resultados consolidados encontrados: **{len(filtered_df)}**")
+        st.dataframe(filtered_df, use_container_width=True)
 
-            # Botón para descargar el CSV unificado o filtrado
-            st.markdown("---")
-            st.subheader("📥 Descargar Resultados")
+        # --- SECCIÓN: TABLAS INDIVIDUALES FILTRADAS ---
+        st.markdown("---")
+        st.subheader("📑 Resultados Desglosados en los Archivos Originales")
+        
+        # Iterar sobre las tablas originales subidas para aplicarles el mismo filtro
+        for file_name, raw_df in zip(file_names, dfs):
+            temp_df = raw_df.copy()
+            
+            # Filtro de student_id en tabla original
+            if selected_id != "-- Todos / Ninguno en específico --" or text_search:
+                if "student_id" in temp_df.columns:
+                    if selected_id != "-- Todos / Ninguno en específico --":
+                        temp_df = temp_df[temp_df["student_id"].astype(str) == selected_id]
+                    elif text_search:
+                        temp_df = temp_df[temp_df["student_id"].astype(str).str.contains(text_search, case=False, na=False)]
+                else:
+                    # Si filtramos por ID y esta tabla no tiene la columna, queda vacía
+                    temp_df = temp_df.iloc[0:0] 
+            
+            # Filtro de edad en tabla original
+            if selected_age_col != "Ninguna" and selected_age_groups:
+                if selected_age_col in temp_df.columns:
+                    temp_df = temp_df[temp_df[selected_age_col].isin(selected_age_groups)]
+                else:
+                    # Si filtramos por Edad y esta tabla no tiene la columna, queda vacía
+                    temp_df = temp_df.iloc[0:0]
+            
+            # Mostrar la tabla individual filtrada
+            st.markdown(f"**Archivo de origen: `{file_name}`**")
+            if len(temp_df) > 0:
+                st.write(f"Coincidencias en este archivo: **{len(temp_df)}**")
+                st.dataframe(temp_df, use_container_width=True)
+            else:
+                st.info("Sin coincidencias (o la tabla no contiene las columnas que estás intentando filtrar).")
 
-            col1, col2 = st.columns(2)
-            with col1:
-                csv_all = merged_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Descargar Tabla Completa Unificada (CSV)",
-                    data=csv_all,
-                    file_name="clientes_unificados.csv",
-                    mime="text/csv",
-                )
-            with col2:
-                csv_filtered = filtered_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Descargar Solo Datos Filtrados (CSV)",
-                    data=csv_filtered,
-                    file_name="cliente_filtrado.csv",
-                    mime="text/csv",
-                )
-        else:
-            st.error("La columna 'student_id' no está presente en la tabla resultante.")
+        # --- DESCARGAS ---
+        st.markdown("---")
+        st.subheader("📥 Descargar Resultados Consolidados")
+
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            csv_all = merged_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Descargar Tabla Completa Unificada (CSV)",
+                data=csv_all,
+                file_name="clientes_unificados.csv",
+                mime="text/csv",
+            )
+        with col_d2:
+            csv_filtered = filtered_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Descargar Solo Datos Filtrados (CSV)",
+                data=csv_filtered,
+                file_name="cliente_filtrado.csv",
+                mime="text/csv",
+            )
 else:
     st.info("👆 Por favor, sube uno o más archivos CSV desde la barra lateral para empezar.")
